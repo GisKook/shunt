@@ -1,4 +1,4 @@
-package lanwatch
+package protocol
 
 import (
 	"log"

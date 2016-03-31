@@ -1,74 +1,74 @@
-package lanwatch
+package shunt
 
 import (
 	"bytes"
-	"github.com/huoyan108/gotcp"
+	"github.com/giskook/gotcp"
 	"log"
-	"time"
-
 	"net"
+	"time"
 )
 
-var ConnSuccess uint8 = 0
-var ConnUnauth uint8 = 1
+var ConnUnauth uint8 = 0
+var ConnSuccess uint8 = 1
 
 type ConnConfig struct {
-	HeartBeat    uint8
-	ReadLimit    int64
-	WriteLimit   int64
-	NsqChanLimit int32
+	HeartBeat  uint8
+	ReadLimit  int64
+	WriteLimit int64
 }
 
 type Conn struct {
-	conn          *gotcp.Conn
-	config        *ConnConfig
-	recieveBuffer *bytes.Buffer
-	ticker        *time.Ticker
-	readflag      int64
-	writeflag     int64
-	closeChan     chan bool
-	index         uint32
-	uid           uint64
-	status        uint8
+	conn       *gotcp.Conn
+	config     *ConnConfig
+	RecvBuffer *bytes.Buffer
+	ticker     *time.Ticker
+	readflag   int64
+	writeflag  int64
+	closeChan  chan bool
+	index      uint32
+	IMEI       uint64
+	Status     uint8
+	ReadMore   bool
 
-	dasconn    *net.TCPConn
-	dasCmdChan chan gotcp.Packet
+	dasconn       *net.TCPConn
+	dasCmdChan    chan gotcp.Packet
+	RecvBufferDas *bytes.Buffer
+	ReadMoreDas   bool
 }
 
 func NewConn(conn *gotcp.Conn, config *ConnConfig) *Conn {
-	tcpaddr, _ := net.ResolveTCPAddr("tcp", "192.168.2.224:1725")
+	log.Println(GetConfiguration().GetDasHost())
+	tcpaddr, _ := net.ResolveTCPAddr("tcp", GetConfiguration().GetDasHost())
 	dasconn, err := net.DialTCP("tcp", nil, tcpaddr)
 	if err != nil {
 		log.Printf("conn to das fail %s\n", err.Error())
 	}
 	return &Conn{
-		conn:          conn,
-		recieveBuffer: bytes.NewBuffer([]byte{}),
-		config:        config,
-		readflag:      time.Now().Unix(),
-		writeflag:     time.Now().Unix(),
-		ticker:        time.NewTicker(time.Duration(config.HeartBeat) * time.Second),
-		closeChan:     make(chan bool),
-		index:         0,
-		status:        ConnUnauth,
+		conn:       conn,
+		RecvBuffer: bytes.NewBuffer([]byte{}),
+		config:     config,
+		readflag:   time.Now().Unix(),
+		writeflag:  time.Now().Unix(),
+		ticker:     time.NewTicker(time.Duration(config.HeartBeat) * time.Second),
+		closeChan:  make(chan bool),
+		index:      0,
+		Status:     ConnUnauth,
+		ReadMore:   false,
+
 		dasconn:       dasconn,
 		dasCmdChan:    make(chan gotcp.Packet, 64),
+		RecvBufferDas: bytes.NewBuffer([]byte{}),
+		ReadMoreDas:   false,
 	}
 }
 
 func (c *Conn) Close() {
 	c.closeChan <- true
 	c.ticker.Stop()
-	c.recieveBuffer.Reset()
+	c.RecvBuffer.Reset()
+	c.RecvBufferDas.Reset()
 	close(c.closeChan)
 	close(c.dasCmdChan)
-}
-
-func (c *Conn) GetGatewayID() uint64 {
-	return c.uid
-}
-func (c *Conn) GetBuffer() *bytes.Buffer {
-	return c.recieveBuffer
 }
 
 func (c *Conn) sendToDas() {
@@ -101,7 +101,7 @@ func (c *Conn) UpdateWriteflag() {
 }
 
 func (c *Conn) SetStatus(status uint8) {
-	c.status = status
+	c.Status = status
 }
 
 func (c *Conn) checkHeart() {
@@ -122,8 +122,8 @@ func (c *Conn) checkHeart() {
 				log.Println("write limit")
 				return
 			}
-			if c.status == ConnUnauth {
-				log.Printf("unauth's gateway gatewayid %d\n", c.uid)
+			if c.Status == ConnUnauth {
+				log.Printf("unauth's gateway gatewayid %d\n", c.IMEI)
 				return
 			}
 		case <-c.closeChan:
@@ -134,9 +134,24 @@ func (c *Conn) checkHeart() {
 
 func (c *Conn) recvdas() {
 	for {
-		buffer := make([]byte, 1024)
-		c.dasconn.Read(buffer)
-		log.Println(string(buffer))
+		if c.dasconn != nil {
+			if c.ReadMoreDas {
+				buffer := make([]byte, 1024)
+				readLength, _ := c.dasconn.Read(buffer)
+				c.RecvBufferDas.Write(buffer[0:readLength])
+			}
+			cmdid, _ := CheckProtocolDas(c.RecvBufferDas)
+			switch cmdid {
+			case Login:
+				c.ReadMoreDas = false
+			case HeartBeat:
+				c.ReadMoreDas = false
+			case Illegal:
+				c.ReadMoreDas = true
+			case HalfPack:
+				c.ReadMoreDas = true
+			}
+		}
 	}
 }
 
@@ -150,7 +165,7 @@ func (c *Conn) Do() {
 type Callback struct{}
 
 func (this *Callback) OnConnect(c *gotcp.Conn) bool {
-	log.Println("new conn")
+	log.Println("new conn ")
 	heartbeat := GetConfiguration().GetServerConnCheckInterval()
 	readlimit := GetConfiguration().GetServerReadLimit()
 	writelimit := GetConfiguration().GetServerWriteLimit()
@@ -173,22 +188,16 @@ func (this *Callback) OnClose(c *gotcp.Conn) {
 	log.Println("closeconn")
 	conn := c.GetExtraData().(*Conn)
 	conn.Close()
-	NewConns().Remove(conn.GetGatewayID())
+	NewConns().Remove(conn.IMEI)
 }
 
 func (this *Callback) OnMessage(c *gotcp.Conn, p gotcp.Packet) bool {
-	lanpacket := p.(*LanWatchPacket)
-	switch lanpacket.Type {
+	trackerPacket := p.(*TrackerPacket)
+	switch trackerPacket.Type {
 	case Login:
-		c.AsyncWritePacket(lanpacket, time.Second)
+		c.AsyncWritePacket(trackerPacket, time.Second)
 	case HeartBeat:
-		c.AsyncWritePacket(lanpacket, time.Second)
-	case PosUp:
-		c.AsyncWritePacket(lanpacket, time.Second)
-	case StationPosUp:
-		c.AsyncWritePacket(lanpacket, time.Second)
-	case NoDo:
-		c.AsyncWritePacket(lanpacket, time.Second)
+		c.AsyncWritePacket(trackerPacket, time.Second)
 	}
 
 	return true

@@ -10,18 +10,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/huoyan108/gotcp"
-	"github.com/huoyan108/shunt"
+	"github.com/giskook/gotcp"
+	"github.com/giskook/shunt"
 )
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// read configuration
-	configuration, err := lanwatch.ReadConfig("./conf.json")
-	lanwatch.SetConfiguration(configuration)
+	shunt.Config, _ = shunt.ReadConfig("./conf.json")
+
+	port := shunt.Config.ServerConfig.BindPort
+
 	// creates a tcp listener
-	tcpAddr, err := net.ResolveTCPAddr("tcp4", ":8989")
+	tcpAddr, err := net.ResolveTCPAddr("tcp4", ":"+fmt.Sprint(port))
 	checkError(err)
 	listener, err := net.ListenTCP("tcp", tcpAddr)
 	checkError(err)
@@ -31,7 +33,7 @@ func main() {
 		PacketSendChanLimit:    20,
 		PacketReceiveChanLimit: 20,
 	}
-	srv := gotcp.NewServer(config, &lanwatch.Callback{}, &lanwatch.LanWatchProtocol{})
+	srv := gotcp.NewServer(config, &shunt.Callback{}, &shunt.TrackerProtocol{})
 
 	// starts service
 	srv.Start(listener, time.Second)

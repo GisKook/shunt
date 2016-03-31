@@ -1,25 +1,9 @@
-package lanwatch
+package shunt
 
 import (
 	"encoding/json"
 	"os"
 )
-
-type NsqConfiguration struct {
-	Addr        string
-	UpTopic     string
-	DownTopic   string
-	Downchannel string
-}
-
-type DatabaseConfiguration struct {
-	Host         string
-	Port         string
-	User         string
-	Passwd       string
-	Dbname       string
-	Monitortable string
-}
 
 type ServerConfiguration struct {
 	ReadLimit         int64
@@ -27,12 +11,16 @@ type ServerConfiguration struct {
 	ConnTimeout       uint8
 	ConnCheckInterval uint8
 	ServerStatistics  uint32
+	BindPort          uint32
+}
+
+type UpConnectConfiguration struct {
+	DasHost string
 }
 
 type Configuration struct {
-	NsqConfig    *NsqConfiguration
-	DbConfig     *DatabaseConfiguration
-	ServerConfig *ServerConfiguration
+	ServerConfig       *ServerConfiguration
+	UpConnectionConfig *UpConnectConfiguration
 }
 
 func ReadConfig(confpath string) (*Configuration, error) {
@@ -58,6 +46,10 @@ func (conf *Configuration) GetServerConnCheckInterval() uint8 {
 
 func (conf *Configuration) GetServerStatistics() uint32 {
 	return conf.ServerConfig.ServerStatistics
+}
+
+func (conf *Configuration) GetDasHost() string {
+	return conf.UpConnectionConfig.DasHost
 }
 
 var Config *Configuration

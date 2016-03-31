@@ -1,4 +1,4 @@
-package lanwatch
+package shunt
 
 import (
 	"sync/atomic"
@@ -27,7 +27,7 @@ func NewConns() *Conns {
 func (cs *Conns) Add(conn *Conn) {
 	conn.index = atomic.AddUint32(&cs.index, 1)
 	cs.connsindex[conn.index] = conn
-	cs.connsuid[conn.uid] = conn.index
+	cs.connsuid[conn.IMEI] = conn.index
 }
 
 func (cs *Conns) GetConn(uid uint64) *Conn {

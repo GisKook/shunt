@@ -1,120 +1,78 @@
-package lanwatch
+package shunt
 
 import (
 	"bytes"
 	//	"encoding/binary"
 	//	"errors"
-	"log"
-	"strconv"
 )
 
-func CheckSum(cmd []byte, cmdlen uint16) byte {
-	temp := cmd[0]
-	for i := uint16(1); i < cmdlen; i++ {
-		temp ^= cmd[i]
+var (
+	LeftFlag      byte   = '['
+	RightFlag     byte   = ']'
+	DasLeftFlag   byte   = '$'
+	DasRightFlag1 byte   = '\r'
+	DasRightFlag2 byte   = '\n'
+	Comma         []byte = []byte{','}
+	Asterisk      []byte = []byte{'*'}
+	Colon         []byte = []byte{':'}
+
+	protocolID = map[string]uint16{
+		"LK": HeartBeat,
 	}
 
-	return temp
+	protocolIDDas = map[string]uint16{
+		"$LOGRT":  Login,
+		"$HCHECK": HeartBeat,
+	}
+)
+
+func parseHeader(buf *bytes.Buffer) uint16 {
+	split := bytes.Split(buf.Bytes(), Comma)
+	header_strings := bytes.Split(split[0], Asterisk)
+
+	return protocolID[string(header_strings[3])]
 }
 
 func CheckProtocol(buffer *bytes.Buffer) (uint16, uint16) {
-	log.Println("cp 1")
 	bufferlen := buffer.Len()
 	if bufferlen == 0 {
 		return Illegal, 0
 	}
-	log.Println("cp 2")
-	//log.Println(string(buffer.Bytes()))
-	//if buffer.Bytes()[0] != '[' {
-	//	return Illegal, 0
-	//}
-	//find [
-	leftFlag := []byte{'['}
-	l := bytes.Index(buffer.Bytes(), leftFlag)
-	if l == -1 {
-		return Illegal, 0
+	if buffer.Bytes()[0] != LeftFlag {
+		buffer.ReadByte()
+		CheckProtocol(buffer)
 	}
-	log.Println("cp 3")
-	p := 0
-	bFlag := false
-	for {
-		if p < bufferlen && buffer.Bytes()[p] != ']' {
-			p++
-		} else {
-			bFlag = true
-			break
+	for i := 1; i < bufferlen; i++ {
+		if buffer.Bytes()[i] == RightFlag {
+			return parseHeader(buffer), uint16(i)
 		}
 	}
-	if !bFlag {
-		return Illegal, 0
-	}
-	p++
-	if l > p {
-		return Illegal, 0
-	}
-	var source []byte
-	source = buffer.Bytes()[0:p]
-	flag := []byte{','}
-	res := bytes.Split(source, flag)
 
-	flag = []byte{']'}
-	res1 := bytes.Split(res[8], flag)
-	protocType := string(res1[0][1:])
-
-	nType, _ := strconv.ParseInt(protocType, 10, 32)
-
-	log.Println("type", nType)
-	switch uint16(nType) {
-	case Login:
-		return Login, uint16(p)
-	case HeartBeat:
-		return HeartBeat, uint16(p)
-	case PosUp:
-		return PosUp, uint16(p)
-	case StationPosUp:
-		return StationPosUp, uint16(p)
-	default:
-		return NoDo, uint16(p)
-	}
-	//var source []byte
-	//source = buffer.Bytes()[0:p]
-	//t1flag := []byte{'T', '1'}
-	//t2flag := []byte{'T', '2'}
-	//t53flag := []byte{'T', '5', '3'}
-	//if bytes.Contains(source, t1flag) {
-	//	return Login, uint16(p)
-	//} else if bytes.Contains(source, t2flag) {
-	//	return HeartBeat, uint16(p)
-	//} else if bytes.Contains(source, t53flag) {
-	//	return PosUp, uint16(p)
-	//} else {
-	//	return NoDo, uint16(p)
-	//}
-
-	return Illegal, 0
+	return HalfPack, 0
 }
 
-//func GetGatewayID(buffer []byte) (uint64, *bytes.Reader) {
-//	reader := bytes.NewReader(buffer)
-//	reader.Seek(5, 0)
-//	uid := make([]byte, 6)
-//	reader.Read(uid)
-//	gid := []byte{0, 0}
-//	gid = append(gid, uid...)
-//	return binary.BigEndian.Uint64(gid), reader
-//}
-//
-//func CheckNsqProtocol(message []byte) (uint64, uint32, *Report.Command, error) {
-//	command := &Report.ControlReport{}
-//	err := proto.Unmarshal(message, command)
-//	if err != nil {
-//		log.Println("unmarshal error")
-//		return 0, 0, nil, errors.New("unmarshal error")
-//	} else {
-//		gatewayid := command.Tid
-//		serialnum := command.SerialNumber
-//		cmd := command.GetCommand()
-//
-//		return gatewayid, serialnum, cmd, nil
-//	}
-//}
+func parseDasCmdID(buf *bytes.Buffer) uint16 {
+	split := bytes.Split(buf.Bytes(), Colon)
+
+	return protocolIDDas[string(split[0])]
+
+}
+
+func CheckProtocolDas(buffer *bytes.Buffer) (uint16, uint16) {
+	bufferlen := buffer.Len()
+	if bufferlen == 0 {
+		return Illegal, 0
+	}
+	if buffer.Bytes()[0] != DasLeftFlag {
+		buffer.ReadByte()
+		CheckProtocol(buffer)
+	}
+	for i := 1; i < bufferlen; i++ {
+		if buffer.Bytes()[i] == DasRightFlag2 && buffer.Bytes()[i-1] == DasRightFlag1 {
+			return parseDasCmdID(buffer), uint16(i)
+		}
+	}
+
+	return HalfPack, 0
+
+}
