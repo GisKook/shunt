@@ -2,7 +2,9 @@ package shunt
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/giskook/gotcp"
+	"github.com/giskook/shunt/protocol"
 	"log"
 	"net"
 	"time"
@@ -27,6 +29,7 @@ type Conn struct {
 	closeChan  chan bool
 	index      uint32
 	IMEI       uint64
+	Batt       string
 	Status     uint8
 	ReadMore   bool
 
@@ -42,6 +45,7 @@ func NewConn(conn *gotcp.Conn, config *ConnConfig) *Conn {
 	dasconn, err := net.DialTCP("tcp", nil, tcpaddr)
 	if err != nil {
 		log.Printf("conn to das fail %s\n", err.Error())
+		return nil
 	}
 	return &Conn{
 		conn:       conn,
@@ -67,6 +71,8 @@ func (c *Conn) Close() {
 	c.ticker.Stop()
 	c.RecvBuffer.Reset()
 	c.RecvBufferDas.Reset()
+	c.dasconn.Close()
+	c.dasconn = nil
 	close(c.closeChan)
 	close(c.dasCmdChan)
 }
@@ -74,6 +80,9 @@ func (c *Conn) Close() {
 func (c *Conn) sendToDas() {
 	defer func() {
 		c.conn.Close()
+		if c.dasconn != nil {
+			c.dasconn.Close()
+		}
 	}()
 
 	for {
@@ -137,12 +146,26 @@ func (c *Conn) recvdas() {
 		if c.dasconn != nil {
 			if c.ReadMoreDas {
 				buffer := make([]byte, 1024)
-				readLength, _ := c.dasconn.Read(buffer)
+				readLength, err := c.dasconn.Read(buffer)
+				if err != nil {
+					return
+				}
+
+				log.Println("<IN DAS>  " + string(buffer))
 				c.RecvBufferDas.Write(buffer[0:readLength])
 			}
-			cmdid, _ := CheckProtocolDas(c.RecvBufferDas)
+			cmdid, pkglen := CheckProtocolDas(c.RecvBufferDas)
+			pkgbyte := make([]byte, pkglen)
+			c.RecvBufferDas.Read(pkgbyte)
 			switch cmdid {
 			case Login:
+				loginRt := protocol.ParseDasLoginRt(pkgbyte)
+				if loginRt.Result {
+					c.Status = ConnSuccess
+					heartpkg := protocol.NewDasHeartPacket(fmt.Sprint(c.IMEI), c.Batt)
+					c.WriteToDas(heartpkg)
+					log.Println("<OUT DAS> " + string(heartpkg.Serialize()))
+				}
 				c.ReadMoreDas = false
 			case HeartBeat:
 				c.ReadMoreDas = false
@@ -151,6 +174,8 @@ func (c *Conn) recvdas() {
 			case HalfPack:
 				c.ReadMoreDas = true
 			}
+		} else {
+			return
 		}
 	}
 }
@@ -176,12 +201,14 @@ func (this *Callback) OnConnect(c *gotcp.Conn) bool {
 	}
 	//log.Println(heartbeat,readlimit,writelimit)
 	conn := NewConn(c, config)
+	if conn != nil {
+		c.PutExtraData(conn)
+		conn.Do()
 
-	c.PutExtraData(conn)
+		return true
+	}
 
-	conn.Do()
-
-	return true
+	return false
 }
 
 func (this *Callback) OnClose(c *gotcp.Conn) {

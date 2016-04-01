@@ -14,6 +14,7 @@ var (
 
 	Login     uint16 = 1
 	HeartBeat uint16 = 2
+	PosUp     uint16 = 3
 )
 
 type TrackerPacket struct {
@@ -43,7 +44,6 @@ type TrackerProtocol struct {
 }
 
 func (this *TrackerProtocol) ReadPacket(c *gotcp.Conn) (gotcp.Packet, error) {
-	log.Println("readPacket")
 	smconn := c.GetExtraData().(*Conn)
 	smconn.UpdateReadflag()
 
@@ -53,7 +53,7 @@ func (this *TrackerProtocol) ReadPacket(c *gotcp.Conn) (gotcp.Packet, error) {
 		if smconn.ReadMore {
 			data := make([]byte, 2048)
 			readLengh, err := conn.Read(data)
-			log.Println(string(data))
+			log.Println("<IN>      " + string(data))
 			if err != nil {
 				return nil, err
 			}
@@ -71,16 +71,27 @@ func (this *TrackerProtocol) ReadPacket(c *gotcp.Conn) (gotcp.Packet, error) {
 		buffer.Read(pkgbyte)
 		switch cmdid {
 		case Login:
-			pkg, daspkg, imei := protocol.ParseLogin(pkgbyte)
+			pkg, daspkg, imei, batt := protocol.ParseLogin(pkgbyte)
 			smconn.IMEI = imei
+			smconn.Batt = batt
 			smconn.WriteToDas(daspkg)
+
 			smconn.ReadMore = false
+			log.Println("<OUT DAS> " + string(daspkg.Serialize()))
+			log.Println("<OUT>     " + string(pkg.Serialize()))
 			return NewTrackerPacket(Login, pkg), nil
 		case HeartBeat:
 			pkg, daspkg := protocol.ParseHeart(pkgbyte)
 			smconn.WriteToDas(daspkg)
 			smconn.ReadMore = false
+			log.Println("<OUT DAS> " + string(daspkg.Serialize()))
+			log.Println("<OUT>     " + string(pkg.Serialize()))
 			return NewTrackerPacket(HeartBeat, pkg), nil
+		case PosUp:
+			daspkg := protocol.ParsePosUp(pkgbyte)
+			smconn.WriteToDas(daspkg)
+			log.Println("<OUT DAS> " + string(daspkg.Serialize()))
+			smconn.ReadMore = false
 		case Illegal:
 			smconn.ReadMore = true
 		case HalfPack:

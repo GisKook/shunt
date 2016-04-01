@@ -8,6 +8,6 @@
 		"BindPort":8887
 	},
 	"UpConnectionConfig":{
-		"DasHost":"192.168.2.67:8990"
+		"DasHost":"111.11.26.209:50028"
 	}
 }

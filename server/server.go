@@ -37,7 +37,7 @@ func main() {
 
 	// starts service
 	srv.Start(listener, time.Second)
-	fmt.Println("listening:", listener.Addr())
+	log.Println("listening:", listener.Addr())
 
 	// catchs system signal
 	chSig := make(chan os.Signal)

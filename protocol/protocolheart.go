@@ -12,7 +12,7 @@ type HeartPacket struct {
 
 func (p *HeartPacket) Serialize() []byte {
 	var feedback string
-	feedback = "[" + p.manufacturer + "*" + "0002*LK]"
+	feedback = p.manufacturer + "*" + p.imei + "*0002*LK]"
 	buf := []byte(feedback)
 
 	return buf

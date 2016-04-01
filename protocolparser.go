@@ -18,6 +18,7 @@ var (
 
 	protocolID = map[string]uint16{
 		"LK": HeartBeat,
+		"UD": PosUp,
 	}
 
 	protocolIDDas = map[string]uint16{
