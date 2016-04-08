@@ -26,7 +26,7 @@ func NewLoginPakcet(manufacturer string, imei string) *LoginPacket {
 	}
 }
 
-func ParseLogin(buffer []byte) (*LoginPacket, *DasLoginPacket, uint64, string) {
+func ParseLogin(buffer []byte) (*LoginPacket, *DasLoginPacket, uint64, string, string) {
 	flag := []byte{'*'}
 	res := bytes.Split(buffer, flag)
 	manufacturer := string(res[0])
@@ -40,5 +40,5 @@ func ParseLogin(buffer []byte) (*LoginPacket, *DasLoginPacket, uint64, string) {
 		batt_value = string(batt[3])
 	}
 
-	return NewLoginPakcet(manufacturer, imei), NewDasLoginPacket(imei), trackerid, batt_value
+	return NewLoginPakcet(manufacturer, imei), NewDasLoginPacket(imei), trackerid, batt_value, manufacturer[1:]
 }

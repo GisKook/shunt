@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"bytes"
+	"strconv"
+	"time"
 )
 
 type DasPosUpPacket struct {
@@ -48,8 +50,17 @@ func ParsePosUp(buffer []byte) *DasPosUpPacket {
 
 	flag = []byte{','}
 	res := bytes.Split(buffer, flag)
-	time := string(res[1][4:6]) + string(res[1][2:4]) + string(res[1][0:2])
-	time += "-" + string(res[2][0:2]) + string(res[2][2:4]) + string(res[2][4:6])
+	year, _ := strconv.Atoi(string(res[1][4:6]))
+	year += 2000
+	month, _ := strconv.Atoi(string(res[1][2:4]))
+	day, _ := strconv.Atoi(string(res[1][0:2]))
+	hour, _ := strconv.Atoi(string(res[2][0:2]))
+	minute, _ := strconv.Atoi(string(res[2][2:4]))
+	second, _ := strconv.Atoi(string(res[2][4:6]))
+	t := time.Date(year, time.Month(month), day, hour, minute, second, 0, time.UTC)
+	local, _ := time.LoadLocation("Asia/Shanghai")
+	timepos := t.In(local).Format("060102-150405")
+
 	batt := string(res[13])
 	speed := string(res[8])
 	parse := "0"
@@ -74,7 +85,7 @@ func ParsePosUp(buffer []byte) *DasPosUpPacket {
 
 	return &DasPosUpPacket{
 		IMEI:      imei,
-		Time:      time,
+		Time:      timepos,
 		Batt:      batt,
 		Speed:     speed,
 		Parse:     parse,

@@ -26,7 +26,7 @@ func NewHeartPacket(manufacturer string, imei string, batt string) *HeartPacket 
 	}
 }
 
-func ParseHeart(buffer []byte) (*HeartPacket, *DasHeartPacket) {
+func ParseHeart(buffer []byte) (*HeartPacket, *DasHeartPacket, string) {
 	flag := []byte{'*'}
 	res := bytes.Split(buffer, flag)
 	manufacturer := string(res[0])
@@ -39,5 +39,5 @@ func ParseHeart(buffer []byte) (*HeartPacket, *DasHeartPacket) {
 		batt = string(batts[3])
 	}
 
-	return NewHeartPacket(manufacturer, imei, batt), NewDasHeartPacket(imei, batt)
+	return NewHeartPacket(manufacturer, imei, batt), NewDasHeartPacket(imei, batt), batt
 }

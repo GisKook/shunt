@@ -20,18 +20,21 @@ type ConnConfig struct {
 }
 
 type Conn struct {
-	conn       *gotcp.Conn
-	config     *ConnConfig
-	RecvBuffer *bytes.Buffer
-	ticker     *time.Ticker
-	readflag   int64
-	writeflag  int64
-	closeChan  chan bool
-	index      uint32
-	IMEI       uint64
-	Batt       string
-	Status     uint8
-	ReadMore   bool
+	conn         *gotcp.Conn
+	config       *ConnConfig
+	RecvBuffer   *bytes.Buffer
+	ticker       *time.Ticker
+	readflag     int64
+	writeflag    int64
+	closeChan    chan bool
+	index        uint32
+	IMEI         uint64
+	Batt         string
+	Status       uint8
+	ReadMore     bool
+	SetLocale    bool
+	Manufacturer string
+	dasticker    *time.Ticker
 
 	dasconn       *net.TCPConn
 	dasCmdChan    chan gotcp.Packet
@@ -54,10 +57,12 @@ func NewConn(conn *gotcp.Conn, config *ConnConfig) *Conn {
 		readflag:   time.Now().Unix(),
 		writeflag:  time.Now().Unix(),
 		ticker:     time.NewTicker(time.Duration(config.HeartBeat) * time.Second),
+		dasticker:  time.NewTicker(time.Duration(120 * time.Second)),
 		closeChan:  make(chan bool),
 		index:      0,
 		Status:     ConnUnauth,
 		ReadMore:   false,
+		SetLocale:  false,
 
 		dasconn:       dasconn,
 		dasCmdChan:    make(chan gotcp.Packet, 64),
@@ -69,6 +74,7 @@ func NewConn(conn *gotcp.Conn, config *ConnConfig) *Conn {
 func (c *Conn) Close() {
 	c.closeChan <- true
 	c.ticker.Stop()
+	c.dasticker.Stop()
 	c.RecvBuffer.Reset()
 	c.RecvBufferDas.Reset()
 	c.dasconn.Close()
@@ -141,6 +147,22 @@ func (c *Conn) checkHeart() {
 	}
 }
 
+func (c *Conn) sendDasHeart() {
+	defer func() {
+		c.conn.Close()
+	}()
+	for {
+		select {
+		case <-c.dasticker.C:
+			heartpkg := protocol.NewDasHeartPacket(fmt.Sprint(c.IMEI), c.Batt)
+			c.WriteToDas(heartpkg)
+			log.Println("<OUT DAS> " + string(heartpkg.Serialize()))
+		case <-c.closeChan:
+			return
+		}
+	}
+}
+
 func (c *Conn) recvdas() {
 	for {
 		if c.dasconn != nil {
@@ -184,6 +206,7 @@ func (c *Conn) Do() {
 	//go c.checkHeart()
 	go c.recvdas()
 	go c.sendToDas()
+	go c.sendDasHeart()
 	//go c.writeToclientLoop()
 }
 
